@@ -1,0 +1,4 @@
+User-agent: *
+Disallow: /
+
+# Hey bot, these points are for humans. Come back when you can book business class.
