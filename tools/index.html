@@ -14,6 +14,7 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://unpkg.com/docx@8.2.2/build/index.umd.js"></script>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         * {
             margin: 0;
@@ -1161,86 +1162,162 @@
                 grid-template-columns: 1fr;
             }
         }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .deal-delete-btn {
+            background: none;
+            border: none;
+            color: var(--gray-400);
+            cursor: pointer;
+            font-size: 16px;
+            padding: 4px 8px;
+            border-radius: 6px;
+            transition: all 0.2s;
+            line-height: 1;
+        }
+        .deal-delete-btn:hover {
+            color: var(--red);
+            background: rgba(239, 68, 68, 0.08);
+        }
     </style>
 </head>
 <body>
-    <!-- Password Gate -->
-    <div id="password-gate" style="display:flex; align-items:center; justify-content:center; min-height:100vh; background:var(--cream); font-family:'Inter',sans-serif;">
-        <div style="background:white; border-radius:20px; padding:48px; box-shadow:0 4px 24px rgba(0,0,0,0.08); max-width:420px; width:100%; text-align:center;">
-            <div style="font-family:'DM Serif Display',serif; font-size:24px; color:var(--dark); margin-bottom:8px;">Internal Tools</div>
-            <div style="font-size:14px; color:var(--gray-500); margin-bottom:32px;">Enter password to access the Media Buy Calculator</div>
-            <form id="pw-form" style="display:flex; flex-direction:column; gap:16px;">
-                <input id="pw-input" type="password" placeholder="Password" autocomplete="current-password"
-                    style="padding:12px 16px; border:1px solid var(--gray-300); border-radius:12px; font-size:15px; outline:none; transition:border-color 0.2s;"
-                    onfocus="this.style.borderColor='var(--primary-blue)'" onblur="this.style.borderColor='var(--gray-300)'">
-                <label style="display:flex; align-items:center; gap:8px; font-size:13px; color:var(--gray-600); cursor:pointer; user-select:none;">
-                    <input id="pw-remember" type="checkbox" checked style="accent-color:var(--primary-blue);"> Remember me for 30 days
-                </label>
-                <button type="submit" style="background:var(--primary-blue); color:white; border:none; padding:12px; border-radius:12px; font-size:15px; font-weight:600; cursor:pointer; transition:background 0.2s;"
-                    onmouseover="this.style.background='var(--primary-blue-dark)'" onmouseout="this.style.background='var(--primary-blue)'">
-                    Access Calculator
-                </button>
-                <div id="pw-error" style="color:var(--red); font-size:13px; display:none;">Incorrect password. Please try again.</div>
-            </form>
-        </div>
-    </div>
-
-    <div id="root" style="display:none;"></div>
-
-    <script>
-    (function() {
-        var PASS_HASH = '2f1192cda83b157ed668e3ecb8ff547574d97457154346b1dfb309bd7f3cbb11';
-        var COOKIE_NAME = 'up_tools_auth';
-
-        async function sha256(str) {
-            var buf = new TextEncoder().encode(str);
-            var hash = await crypto.subtle.digest('SHA-256', buf);
-            return Array.from(new Uint8Array(hash)).map(function(b) { return b.toString(16).padStart(2, '0'); }).join('');
-        }
-
-        function getCookie(name) {
-            var match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
-            return match ? match[2] : null;
-        }
-
-        function setCookie(name, value, days) {
-            var d = new Date();
-            d.setTime(d.getTime() + (days * 24 * 60 * 60 * 1000));
-            document.cookie = name + '=' + value + ';expires=' + d.toUTCString() + ';path=/tools;SameSite=Strict';
-        }
-
-        function unlock() {
-            document.getElementById('password-gate').style.display = 'none';
-            document.getElementById('root').style.display = 'block';
-        }
-
-        // Check cookie on load
-        if (getCookie(COOKIE_NAME) === 'authenticated') {
-            unlock();
-        }
-
-        document.getElementById('pw-form').addEventListener('submit', async function(e) {
-            e.preventDefault();
-            var pw = document.getElementById('pw-input').value;
-            var hash = await sha256(pw);
-            if (hash === PASS_HASH) {
-                if (document.getElementById('pw-remember').checked) {
-                    setCookie(COOKIE_NAME, 'authenticated', 30);
-                } else {
-                    setCookie(COOKIE_NAME, 'authenticated', 0);
-                }
-                unlock();
-            } else {
-                document.getElementById('pw-error').style.display = 'block';
-                document.getElementById('pw-input').value = '';
-                document.getElementById('pw-input').focus();
-            }
-        });
-    })();
-    </script>
+    <div id="root"></div>
 
     <script type="text/babel">
             const { useState, useEffect, useMemo, useRef } = React;
+
+        // Supabase client
+        const SUPABASE_URL = 'https://efxxlvtmnhwhvujbnegg.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVmeHhsdnRtbmh3aHZ1amJuZWdnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4NzExNzMsImV4cCI6MjA4NzQ0NzE3M30.QXroKUfg9Ub7b4UEFf-drhNMq7pyfstDbGMQuqcYZCw';
+        const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        // Clean up legacy password cookie
+        document.cookie = 'up_tools_auth=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/tools';
+
+        // ─── Auth Gate Component ───
+        function AuthGate() {
+            const [email, setEmail] = useState('');
+            const [loading, setLoading] = useState(false);
+            const [message, setMessage] = useState('');
+            const [error, setError] = useState('');
+
+            const handleLogin = async (e) => {
+                e.preventDefault();
+                setLoading(true);
+                setError('');
+                setMessage('');
+
+                const { error } = await supabaseClient.auth.signInWithOtp({
+                    email,
+                    options: {
+                        emailRedirectTo: window.location.origin + '/tools/'
+                    }
+                });
+
+                if (error) {
+                    setError(error.message);
+                } else {
+                    setMessage('Check your email for a magic link to sign in.');
+                }
+                setLoading(false);
+            };
+
+            return (
+                <div style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    minHeight: '100vh', background: 'var(--cream)', fontFamily: "'Inter', sans-serif"
+                }}>
+                    <div style={{
+                        background: 'white', borderRadius: '20px', padding: '48px',
+                        boxShadow: '0 4px 24px rgba(0,0,0,0.08)', maxWidth: '420px',
+                        width: '100%', textAlign: 'center'
+                    }}>
+                        <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: '24px', color: 'var(--dark)', marginBottom: '8px' }}>
+                            Internal Tools
+                        </div>
+                        <div style={{ fontSize: '14px', color: 'var(--gray-500)', marginBottom: '32px' }}>
+                            Sign in to access the Media Buy Calculator
+                        </div>
+                        <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                            <input
+                                type="email"
+                                placeholder="you@upgradedpoints.com"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                required
+                                style={{
+                                    padding: '12px 16px', border: '1px solid var(--gray-300)',
+                                    borderRadius: '12px', fontSize: '15px', outline: 'none',
+                                    transition: 'border-color 0.2s'
+                                }}
+                                onFocus={(e) => e.target.style.borderColor = 'var(--primary-blue)'}
+                                onBlur={(e) => e.target.style.borderColor = 'var(--gray-300)'}
+                            />
+                            <button
+                                type="submit"
+                                disabled={loading}
+                                style={{
+                                    background: 'var(--primary-blue)', color: 'white', border: 'none',
+                                    padding: '12px', borderRadius: '12px', fontSize: '15px',
+                                    fontWeight: '600', cursor: loading ? 'not-allowed' : 'pointer',
+                                    opacity: loading ? 0.7 : 1, transition: 'background 0.2s'
+                                }}
+                            >
+                                {loading ? 'Sending...' : 'Send Magic Link'}
+                            </button>
+                            {message && <div style={{ color: 'var(--green)', fontSize: '13px' }}>{message}</div>}
+                            {error && <div style={{ color: 'var(--red)', fontSize: '13px' }}>{error}</div>}
+                        </form>
+                    </div>
+                </div>
+            );
+        }
+
+        // ─── Loading Screen ───
+        function LoadingScreen() {
+            return (
+                <div style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    minHeight: '100vh', background: 'var(--cream)'
+                }}>
+                    <div style={{
+                        width: '32px', height: '32px', border: '3px solid var(--gray-200)',
+                        borderTopColor: 'var(--primary-blue)', borderRadius: '50%',
+                        animation: 'spin 0.8s linear infinite'
+                    }} />
+                </div>
+            );
+        }
+
+        // ─── App Wrapper (Auth) ───
+        function App() {
+            const [session, setSession] = useState(null);
+            const [authLoading, setAuthLoading] = useState(true);
+
+            useEffect(() => {
+                supabaseClient.auth.getSession().then(({ data: { session } }) => {
+                    setSession(session);
+                    setAuthLoading(false);
+                });
+
+                const { data: { subscription } } = supabaseClient.auth.onAuthStateChange(
+                    (_event, session) => {
+                        setSession(session);
+                        setAuthLoading(false);
+                    }
+                );
+
+                return () => subscription.unsubscribe();
+            }, []);
+
+            if (authLoading) return <LoadingScreen />;
+            if (!session) return <AuthGate />;
+            return <MediaBuyCalculator session={session} />;
+        }
 
         // Issuer data with base conversion rates and historical context
         const ISSUERS = {
@@ -1628,7 +1705,7 @@
         }
 
         // Main Calculator Component
-        function MediaBuyCalculator() {
+        function MediaBuyCalculator({ session }) {
             const [issuer, setIssuer] = useState('chase');
             const [card, setCard] = useState('United Explorer');
             const [packageCount, setPackageCount] = useState(2);
@@ -1636,15 +1713,8 @@
             const [offerQuality, setOfferQuality] = useState('medium');
             const [duration, setDuration] = useState('46');
             const [minCostPerNAA, setMinCostPerNAA] = useState('800');
-            const [historicalOverrides, setHistoricalOverrides] = useState({});
-            const [customDeals, setCustomDeals] = useState(() => {
-                try {
-                    const saved = localStorage.getItem('customHistoricalDeals');
-                    return saved ? JSON.parse(saved) : {};
-                } catch (err) {
-                    return {};
-                }
-            });
+            const [supabaseDeals, setSupabaseDeals] = useState({});
+            const [dealsLoading, setDealsLoading] = useState(true);
             const [newDeal, setNewDeal] = useState({ name: '', budget: '', naa: '', date: '' });
             const [showToast, setShowToast] = useState(false);
             const [toastMessage, setToastMessage] = useState('');
@@ -1657,7 +1727,91 @@
             const [googleUser, setGoogleUser] = useState(null);
             const [accessToken, setAccessToken] = useState(null);
             const [isCreatingDoc, setIsCreatingDoc] = useState(false);
-            const STORAGE_KEY = 'upm-media-buy-historical-deals';
+
+            // ─── Load deals from Supabase ───
+            const loadDeals = async () => {
+                const { data, error } = await supabaseClient
+                    .from('deals')
+                    .select('*')
+                    .order('created_at', { ascending: false });
+
+                if (error) {
+                    console.warn('Failed to load deals from Supabase', error);
+                    return;
+                }
+
+                const grouped = {};
+                data.forEach((deal) => {
+                    if (!grouped[deal.issuer]) grouped[deal.issuer] = [];
+                    grouped[deal.issuer].push({
+                        id: deal.id,
+                        name: deal.name,
+                        budget: deal.budget,
+                        naa: deal.naa,
+                        date: deal.date,
+                        isCustom: true,
+                        source: deal.source,
+                        created_by: deal.created_by
+                    });
+                });
+                setSupabaseDeals(grouped);
+                setDealsLoading(false);
+            };
+
+            // Load deals on mount + migrate localStorage
+            useEffect(() => {
+                const init = async () => {
+                    // One-time migration from localStorage
+                    if (!localStorage.getItem('upm-deals-migrated')) {
+                        const keys = ['upm-media-buy-historical-deals', 'customHistoricalDeals'];
+                        const allDeals = [];
+
+                        keys.forEach((key) => {
+                            try {
+                                const stored = localStorage.getItem(key);
+                                if (!stored) return;
+                                const parsed = JSON.parse(stored);
+                                Object.entries(parsed).forEach(([issuerKey, deals]) => {
+                                    deals.forEach((deal) => {
+                                        if (deal.budget > 0 && deal.naa > 0) {
+                                            allDeals.push({
+                                                issuer: issuerKey,
+                                                name: deal.name,
+                                                budget: deal.budget,
+                                                naa: deal.naa,
+                                                date: deal.date || 'Unknown',
+                                                source: key === 'customHistoricalDeals' ? 'csv' : 'manual',
+                                                created_by: session.user.id
+                                            });
+                                        }
+                                    });
+                                });
+                            } catch (e) { /* skip */ }
+                        });
+
+                        if (allDeals.length > 0) {
+                            await supabaseClient.from('deals').insert(allDeals);
+                        }
+                        keys.forEach((key) => localStorage.removeItem(key));
+                        localStorage.setItem('upm-deals-migrated', 'true');
+                    }
+
+                    await loadDeals();
+                };
+                init();
+            }, [session]);
+
+            // Realtime subscription for team sync
+            useEffect(() => {
+                const channel = supabaseClient
+                    .channel('deals-realtime')
+                    .on('postgres_changes', { event: '*', schema: 'public', table: 'deals' }, () => {
+                        loadDeals();
+                    })
+                    .subscribe();
+
+                return () => { supabaseClient.removeChannel(channel); };
+            }, []);
 
             // Update card when issuer changes
             useEffect(() => {
@@ -1671,36 +1825,6 @@
                 setShowToast(true);
                 setTimeout(() => setShowToast(false), 1500);
             };
-
-            useEffect(() => {
-                try {
-                    const stored = localStorage.getItem(STORAGE_KEY);
-                    if (stored) {
-                        const parsed = JSON.parse(stored);
-                        if (parsed && typeof parsed === 'object') {
-                            setHistoricalOverrides(parsed);
-                        }
-                    }
-                } catch (err) {
-                    console.warn('Failed to load stored deals', err);
-                }
-            }, []);
-
-            useEffect(() => {
-                try {
-                    localStorage.setItem(STORAGE_KEY, JSON.stringify(historicalOverrides));
-                } catch (err) {
-                    console.warn('Failed to save deals', err);
-                }
-            }, [historicalOverrides]);
-
-            useEffect(() => {
-                try {
-                    localStorage.setItem('customHistoricalDeals', JSON.stringify(customDeals));
-                } catch (err) {
-                    console.warn('Failed to save custom deals', err);
-                }
-            }, [customDeals]);
 
             // Calculate everything
             const durationValue = useMemo(() => Number(duration) || 0, [duration]);
@@ -1745,10 +1869,9 @@
             };
 
             const historicalDeals = useMemo(() => {
-                const overrides = historicalOverrides[issuer] || [];
-                const uploaded = customDeals[issuer] || [];
-                return [...ISSUERS[issuer].historicalDeals, ...overrides, ...uploaded];
-            }, [issuer, historicalOverrides, customDeals]);
+                const dbDeals = supabaseDeals[issuer] || [];
+                return [...ISSUERS[issuer].historicalDeals, ...dbDeals];
+            }, [issuer, supabaseDeals]);
 
             const visibleDeals = useMemo(() => (
                 showAllDeals ? historicalDeals : historicalDeals.slice(0, 3)
@@ -2244,7 +2367,7 @@
                 return () => window.removeEventListener('keydown', handleKeyDown);
             }, [handleGenerateProposal, handleCopySummary]);
 
-            const handleAddDeal = () => {
+            const handleAddDeal = async () => {
                 const name = newDeal.name.trim();
                 const budgetValue = Number(newDeal.budget);
                 const naaValue = Number(newDeal.naa);
@@ -2253,15 +2376,56 @@
                 if (!name || !Number.isFinite(budgetValue) || !Number.isFinite(naaValue) || !date) return;
                 if (budgetValue <= 0 || naaValue <= 0) return;
 
-                setHistoricalOverrides((prev) => ({
+                const { data, error } = await supabaseClient
+                    .from('deals')
+                    .insert({
+                        issuer,
+                        name,
+                        budget: budgetValue,
+                        naa: naaValue,
+                        date,
+                        source: 'manual',
+                        created_by: session.user.id
+                    })
+                    .select()
+                    .single();
+
+                if (error) {
+                    showToastMessage('Failed to save deal');
+                    console.error(error);
+                    return;
+                }
+
+                setSupabaseDeals((prev) => ({
                     ...prev,
                     [issuer]: [
-                        ...(prev[issuer] || []),
-                        { name, budget: budgetValue, naa: naaValue, date, isCustom: true }
+                        {
+                            id: data.id, name: data.name, budget: data.budget,
+                            naa: data.naa, date: data.date, isCustom: true,
+                            source: data.source, created_by: data.created_by
+                        },
+                        ...(prev[issuer] || [])
                     ]
                 }));
 
                 setNewDeal({ name: '', budget: '', naa: '', date: '' });
+                showToastMessage('Deal saved');
+            };
+
+            const handleDeleteDeal = async (dealId) => {
+                const { error } = await supabaseClient.from('deals').delete().eq('id', dealId);
+                if (error) {
+                    showToastMessage('Failed to delete deal');
+                    return;
+                }
+                setSupabaseDeals((prev) => {
+                    const updated = {};
+                    Object.entries(prev).forEach(([key, deals]) => {
+                        updated[key] = deals.filter(d => d.id !== dealId);
+                    });
+                    return updated;
+                });
+                showToastMessage('Deal removed');
             };
 
             const handleCSVUpload = (eventOrFile) => {
@@ -2269,13 +2433,13 @@
                 if (!file) return;
 
                 const reader = new FileReader();
-                reader.onload = (e) => {
+                reader.onload = async (e) => {
                     const text = e.target.result || '';
                     const lines = text.split('\n').filter(line => line.trim());
                     if (lines.length < 2) return;
 
                     const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-                    const deals = {};
+                    const rows = [];
 
                     for (let i = 1; i < lines.length; i++) {
                         const values = lines[i].split(',').map(v => v.trim());
@@ -2287,26 +2451,47 @@
                         const issuerKey = row.issuer?.toLowerCase().replace(/\s+/g, '_');
                         if (!issuerKey) continue;
 
-                        if (!deals[issuerKey]) deals[issuerKey] = [];
-                        deals[issuerKey].push({
+                        const budget = parseInt(row.budget, 10) || 0;
+                        const naa = parseInt(row.naa, 10) || 0;
+                        if (budget <= 0 || naa <= 0) continue;
+
+                        rows.push({
+                            issuer: issuerKey,
                             name: row.name || 'Untitled Deal',
-                            budget: parseInt(row.budget, 10) || 0,
-                            naa: parseInt(row.naa, 10) || 0,
+                            budget,
+                            naa,
                             date: row.date || '',
-                            isCustom: true
+                            source: 'csv',
+                            created_by: session.user.id
                         });
                     }
 
-                    const merged = { ...customDeals };
-                    Object.keys(deals).forEach((key) => {
-                        merged[key] = [...(merged[key] || []), ...deals[key]];
-                    });
+                    if (rows.length === 0) return;
 
-                    setCustomDeals(merged);
-                    const count = Object.values(deals).flat().length;
-                    if (count > 0) {
-                        showToastMessage(`Imported ${count} deals from CSV`);
+                    const { data, error } = await supabaseClient
+                        .from('deals')
+                        .insert(rows)
+                        .select();
+
+                    if (error) {
+                        showToastMessage('Failed to import deals');
+                        console.error(error);
+                        return;
                     }
+
+                    // Update local state
+                    const updated = { ...supabaseDeals };
+                    data.forEach((deal) => {
+                        if (!updated[deal.issuer]) updated[deal.issuer] = [];
+                        updated[deal.issuer].unshift({
+                            id: deal.id, name: deal.name, budget: deal.budget,
+                            naa: deal.naa, date: deal.date, isCustom: true,
+                            source: deal.source, created_by: deal.created_by
+                        });
+                    });
+                    setSupabaseDeals(updated);
+                    showToastMessage(`Imported ${data.length} deals from CSV`);
+
                     if (eventOrFile?.target) {
                         eventOrFile.target.value = '';
                     }
@@ -2324,12 +2509,26 @@
                 }
             };
 
-            const handleClearCustomDeals = () => {
-                if (window.confirm('Clear all uploaded deals? Preset deals will remain.')) {
-                    setCustomDeals({});
-                    localStorage.removeItem('customHistoricalDeals');
-                    showToastMessage('Custom deals cleared');
+            const handleClearCustomDeals = async () => {
+                if (!window.confirm('Clear all uploaded CSV deals? Manually added and preset deals will remain.')) return;
+
+                const { error } = await supabaseClient
+                    .from('deals')
+                    .delete()
+                    .eq('source', 'csv');
+
+                if (error) {
+                    showToastMessage('Failed to clear deals');
+                    console.error(error);
+                    return;
                 }
+
+                const updated = {};
+                Object.entries(supabaseDeals).forEach(([key, deals]) => {
+                    updated[key] = deals.filter(d => d.source !== 'csv');
+                });
+                setSupabaseDeals(updated);
+                showToastMessage('CSV deals cleared');
             };
 
             const downloadCSVTemplate = () => {
@@ -2365,7 +2564,17 @@ ihg,IHG Traveler Q4-Q1,65000,125,Nov 2025`;
                                     <kbd>?</kbd> Shortcuts
                                 </button>
                                 <a href="/" className="header-back">← Main Site</a>
-                                <span className="header-badge">Internal Tool</span>
+                                <span className="header-badge" title={session.user.email}>
+                                    {session.user.email.split('@')[0]}
+                                </span>
+                                <button
+                                    onClick={async () => { await supabaseClient.auth.signOut(); }}
+                                    className="header-back"
+                                    style={{ cursor: 'pointer', background: 'none', border: 'none', fontFamily: 'inherit' }}
+                                    type="button"
+                                >
+                                    Sign Out
+                                </button>
                             </div>
                         </div>
                     </header>
@@ -2696,21 +2905,33 @@ ihg,IHG Traveler Q4-Q1,65000,125,Nov 2025`;
                                             <div className="historical-empty">No deals yet. Upload a CSV or add one below.</div>
                                         ) : (
                                             visibleDeals.map((deal, index) => (
-                                                <div key={index} className="historical-deal">
+                                                <div key={deal.id || index} className="historical-deal">
                                                     <div className="historical-deal-info">
                                                         <span className="historical-deal-name">
                                                             {deal.name}
-                                                            {deal.isCustom && <span className="custom-deal-badge">Uploaded</span>}
+                                                            {deal.isCustom && <span className="custom-deal-badge">{deal.source === 'csv' ? 'CSV' : 'Added'}</span>}
                                                         </span>
                                                         <span className="historical-deal-details">
                                                             {formatCurrency(deal.budget)} · {deal.naa} NAA · {deal.date}
                                                         </span>
                                                     </div>
-                                                    <div className="historical-deal-cpa">
-                                                        <div className="historical-deal-cpa-value">
-                                                            {formatCurrency(Math.round(deal.budget / deal.naa))}
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                        <div className="historical-deal-cpa">
+                                                            <div className="historical-deal-cpa-value">
+                                                                {formatCurrency(Math.round(deal.budget / deal.naa))}
+                                                            </div>
+                                                            <div className="historical-deal-cpa-label">cost/NAA</div>
                                                         </div>
-                                                        <div className="historical-deal-cpa-label">cost/NAA</div>
+                                                        {deal.id && (
+                                                            <button
+                                                                className="deal-delete-btn"
+                                                                onClick={() => handleDeleteDeal(deal.id)}
+                                                                title="Delete deal"
+                                                                type="button"
+                                                            >
+                                                                ×
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 </div>
                                             ))
@@ -2777,9 +2998,9 @@ ihg,IHG Traveler Q4-Q1,65000,125,Nov 2025`;
                                                 style={{ display: 'none' }}
                                             />
                                         </div>
-                                        {Object.keys(customDeals).length > 0 && (
+                                        {Object.values(supabaseDeals).flat().some(d => d.source === 'csv') && (
                                             <button className="clear-deals-btn" type="button" onClick={handleClearCustomDeals}>
-                                                Clear uploaded deals
+                                                Clear CSV deals
                                             </button>
                                         )}
                                         <a href="#" className="csv-template-link" onClick={(e) => {
@@ -2842,7 +3063,7 @@ ihg,IHG Traveler Q4-Q1,65000,125,Nov 2025`;
             );
         }
 
-        ReactDOM.createRoot(document.getElementById('root')).render(<MediaBuyCalculator />);
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
     </script>
 </body>
 </html>
